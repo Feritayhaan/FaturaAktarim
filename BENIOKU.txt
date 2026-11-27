@@ -1,0 +1,64 @@
+﻿FATURA AKTARIM PROGRAMI
+=======================
+
+Ne yapar?
+  "Gelen" klasörüne atılan ZIP dosyalarını açar, içindeki e-Fatura / e-Arşiv XML'lerini okur
+  ve SQL Server'daki dbo.Faturalar tablosuna yazar (her satır = 1 fatura kalemi).
+
+  - Tabloda zaten olan fatura (aynı UUID) tekrar eklenmez. Aynı ZIP'i iki kez atsanız da çift kayıt olmaz.
+  - Her ZIP tek parça işlenir: ya tamamı yazılır ya hiç yazılmaz (yarım kayıt kalmaz).
+  - XML'ler ZIP'in kökünde, alt klasörlerde ya da ZIP içindeki ZIP'lerde olabilir; hepsi bulunur.
+  - Fatura olmayan XML'ler (uygulama yanıtı vb.) atlanır.
+  - Başarılı ZIP  -> Islenen klasörüne taşınır (başına tarih-saat eklenir)
+    Hatalı ZIP    -> Hatali klasörüne taşınır, yanında .hata.txt dosyasında sebebi yazar
+    Tüm işlemler  -> Log\aktarim_YYYY-AA.log
+  - Kopyalanması bitmemiş ZIP'e dokunmaz (son 20 saniyede değişmişse bir sonraki tura bırakır).
+
+Klasördeki dosyalar
+  FaturaAktarim.ps1     Programın kendisi
+  ayarlar.json          Sunucu / veritabanı / tablo ayarları (git'e girmez)
+  ayarlar.ornek.json    Ayar şablonu
+  Calistir.bat          Elle hemen çalıştırmak için (çift tıklayın)
+  Zamanlayici_Kur.ps1   Otomatik çalışma (Görev Zamanlayıcı) kurulumu
+  Gelen, Islenen, Hatali, Log, Gecici   İlk çalışmada kendiliğinden oluşur
+
+KURULUM (SQL Server'a erişen bilgisayarda)
+-----------------------------------------
+1) Bu klasörü olduğu gibi kalıcı bir yere kopyalayın, örn. C:\FaturaAktarim
+
+2) ayarlar.json yoksa ayarlar.ornek.json dosyasını ayarlar.json adıyla kopyalayın.
+   Sonra ayarlar.json dosyasını Not Defteri ile açıp doldurun / kontrol edin:
+     "Sunucu":        SQL Server adresi
+     "Veritabani":    Veritabanı adı
+     "Tablo":         Tablo adı (örn. dbo.Faturalar)
+     "WindowsKimlik": true  -> Windows oturumunuzla bağlanır (önerilen)
+                      false -> "Kullanici" ve "Sifre" ile SQL kullanıcısıyla bağlanır
+     "AnaKlasor":     Boş bırakırsanız Gelen/Islenen/... bu klasörün içinde oluşur.
+                      Başka yer isterseniz yazın, örn. "D:\\Faturalar"  (ters bölü iki kez yazılır)
+   Not: SQL şifresi bu dosyada açık durur. Mümkünse Windows kimliği, ya da sadece bu tabloya
+   yazma yetkisi olan ayrı bir SQL kullanıcısı kullanın.
+
+3) Deneme (SQL'e yazmadan, sadece okur ve sayar):
+     Gelen klasörüne bir ZIP atın, 20 saniye bekleyin, sonra komut isteminde:
+       Calistir.bat -Deneme
+     Ekranda "XML: ..., yeni fatura: ..., zaten tabloda: ..." görmelisiniz.
+
+4) Gerçek çalıştırma: Calistir.bat'a çift tıklayın.
+
+5) Otomatik çalışsın (her 5 dakikada bir Gelen klasörüne bakar):
+     PowerShell'i açın, klasöre gidip:
+       powershell -ExecutionPolicy Bypass -File .\Zamanlayici_Kur.ps1
+     Oturum kapalıyken de çalışsın isterseniz:
+       powershell -ExecutionPolicy Bypass -File .\Zamanlayici_Kur.ps1 -OturumKapaliykenDe
+     Süreyi değiştirmek için: -Dakika 10      Kaldırmak için: -Kaldir
+
+Tablo hakkında
+  - Program tablonuzun kolonlarını kendisi okur. Kolon sırası önemli değil; Id IDENTITY,
+    EklenmeZamani gibi ek kolonlar olabilir. Tarih kolonları DATE/DATETIME ya da NVARCHAR olabilir.
+  - Tabloda olmayan kolonlar atlanır ve log'a UYARI yazılır.
+  - UUID kolonu şarttır (çift kayıt kontrolü bunu kullanır).
+  - Bir metin kolonu kısa kalırsa ZIP Hatali'ya gider ve hangi kolon olduğu yazılır; kolonu büyütüp
+    ZIP'i Hatali'dan tekrar Gelen'e atmanız yeterli.
+
+Sorun olursa
+  Log klasöründeki son log dosyasına ve Hatali klasöründeki .hata.txt dosyasına bakın.

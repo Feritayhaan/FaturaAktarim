@@ -1,0 +1,12 @@
+# Sunucu / veritabani / sifre bilgileri - repoya girmez (sablon: ayarlar.ornek.json)
+ayarlar.json
+
+# Calisma klasorleri: fatura verisi (kisi adlari, TCKN) ve loglar
+Gelen/
+Islenen/
+Hatali/
+Log/
+Gecici/
+*.zip
+*.xml
+*.log

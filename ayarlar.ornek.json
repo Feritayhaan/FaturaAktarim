@@ -1,0 +1,9 @@
+{
+    "AnaKlasor": "",
+    "Sunucu": "SUNUCU_ADI_VEYA_IP",
+    "Veritabani": "VERITABANI_ADI",
+    "Tablo": "dbo.Faturalar",
+    "WindowsKimlik": true,
+    "Kullanici": "",
+    "Sifre": ""
+}
