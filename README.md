@@ -18,6 +18,7 @@ flowchart LR
     E -->|var| F[Atlanır]
     E -->|yok| G[(SQL Server<br/>dbo.Faturalar)]
     G --> H[ZIP → Islenen]
+    H -->|30 gün sonra| X[Otomatik silinir]
     B -.hata olursa.-> I[ZIP → Hatali<br/>+ .hata.txt]
     B -.her adım.-> L[Log]
 ```
@@ -27,7 +28,8 @@ flowchart LR
 3. **Oku** – Her XML'den fatura başlığını (no, tarih, satıcı, alıcı, toplamlar, vergiler) ve kalemleri çıkarır.
 4. **Tekrar kontrolü** – Tabloda aynı **UUID**'li fatura varsa atlar. Aynı ZIP iki kez atılsa da çift kayıt olmaz.
 5. **Yaz** – Yeni kalemleri tek seferde (SqlBulkCopy) ve **tek işlem (transaction)** olarak yazar: ya hepsi yazılır ya hiçbiri.
-6. **Taşı** – Başarılı ZIP `Islenen`'e, hatalı ZIP `Hatali`'ya gider; sebebi yanındaki `.hata.txt`'de ve log'da yazar.
+6. **Taşı** – Başarılı ZIP `Islenen`'e, hatalı ZIP `Hatali`'ya gider; dosya adının başına işlenme zamanı eklenir (`20261127_094208_efatura.zip`). Hatanın sebebi yanındaki `.hata.txt`'de ve log'da yazar.
+7. **Temizle** – Her çalışmada `Islenen`'deki **30 günden eski** ZIP'ler silinir (bkz. [Saklama süreleri](#saklama-süreleri)).
 
 ## Klasör yapısı
 
@@ -37,16 +39,31 @@ FaturaAktarim/
 ├── Calistir.bat           # Elle çalıştırmak için (çift tık)
 ├── Zamanlayici_Kur.ps1    # Otomatik çalışma (Görev Zamanlayıcı) kurulumu
 ├── ayarlar.ornek.json     # Ayar şablonu → ayarlar.json olarak kopyalanır
+├── ayarlar.json           # Sizin sunucu / veritabanı bilgileriniz (git'e girmez)
 ├── BENIOKU.txt            # Ayrıntılı kullanım notları
 │
-│   (ilk çalışmada kendiliğinden oluşur, git'e girmez)
-├── ayarlar.json           # Sizin sunucu / veritabanı bilgileriniz
+│   Çalışma klasörleri: pakette boş gelir, içerikleri git'e girmez
 ├── Gelen/                 # ZIP'leri buraya atın
-├── Islenen/               # Başarıyla aktarılan ZIP'ler
-├── Hatali/                # Aktarılamayan ZIP'ler + .hata.txt
+├── Islenen/               # Başarıyla aktarılan ZIP'ler  → 30 gün sonra silinir
+├── Hatali/                # Aktarılamayan ZIP'ler + .hata.txt  → varsayılan: silinmez
 ├── Log/                   # aktarim_YYYY-AA.log
-└── Gecici/                # Açma sırasında kullanılan geçici klasör
+└── Gecici/                # Açma sırasında kullanılan geçici klasör (kendini temizler)
 ```
+
+## Saklama süreleri
+
+İşi biten ZIP'ler sonsuza kadar birikmesin diye program her çalışmada eski dosyaları temizler. Süreler `ayarlar.json`'dan ayarlanır (gün; `0` = hiç silme):
+
+| Ayar | Varsayılan | Ne yapar |
+|---|---|---|
+| `IslenenSaklamaGun` | `30` | `Islenen`'deki ZIP'ler aktarıldıktan 30 gün sonra silinir. Veriler SQL tablosunda kalır. |
+| `HataliSaklamaGun` | `0` | `Hatali`'daki ZIP'ler incelenmesi gerektiği için varsayılan olarak **silinmez**. |
+
+- Süre, dosyanın adındaki **işlenme zamanından** hesaplanır (kopyalanma tarihinden değil).
+- Sadece programın kendi taşıdığı dosyalar (adı `yyyyMMdd_HHmmss_` ile başlayanlar) silinir; klasöre elle koyduğunuz dosyalara dokunulmaz.
+- `-Deneme` modunda hiçbir şey silinmez; neyin silineceği log'a yazılır.
+- Yarıda kalmış çalışmalardan `Gecici`'de kalan klasörler 1 gün sonra temizlenir.
+- Ayar dosyanızda bu anahtarlar yoksa varsayılanlar kullanılır.
 
 ## Tablo yapısı
 
@@ -95,7 +112,9 @@ Paketin içinde ayar dosyası (`ayarlar.json`) yoktur; şablondan oluşturulur (
    | `Veritabani` | Veritabanı adı |
    | `Tablo` | Tablo adı (örn. `dbo.Faturalar`) |
    | `WindowsKimlik` | `true` → Windows oturumuyla bağlanır (önerilen). `false` → `Kullanici` / `Sifre` ile |
-   | `AnaKlasor` | Boşsa `Gelen`/`Islenen`/... programın yanında oluşur |
+   | `AnaKlasor` | Boşsa programın yanındaki `Gelen`/`Islenen`/... klasörleri kullanılır |
+   | `IslenenSaklamaGun` | İşlenen ZIP'lerin kaç gün saklanacağı (varsayılan `30`, `0` = silme) |
+   | `HataliSaklamaGun` | Hatalı ZIP'lerin kaç gün saklanacağı (varsayılan `0` = silme) |
 
 3. Deneme (SQL'e yazmadan sadece sayar): `Gelen`'e bir ZIP atın, 20 sn bekleyin:
    ```powershell
@@ -118,6 +137,7 @@ Paketin içinde ayar dosyası (`ayarlar.json`) yoktur; şablondan oluşturulur (
 
 | Sürüm | Değişiklik |
 |---|---|
+| [v1.1.0](../../releases/tag/v1.1.0) | Çalışma klasörleri pakette hazır gelir. İşlenen ZIP'ler 30 gün sonra otomatik silinir (`IslenenSaklamaGun`); hatalı ZIP'ler için isteğe bağlı süre (`HataliSaklamaGun`); yarım kalan geçici klasörlerin temizliği |
 | [v1.0.0](../../releases/tag/v1.0.0) | İlk sürüm: ZIP → SQL aktarımı, UUID ile tekrar kontrolü, tek işlem (transaction), deneme modu, Görev Zamanlayıcı kurulumu |
 
 ## Gereksinimler

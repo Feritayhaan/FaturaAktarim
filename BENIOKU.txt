@@ -9,7 +9,8 @@ Ne yapar?
   - Her ZIP tek parça işlenir: ya tamamı yazılır ya hiç yazılmaz (yarım kayıt kalmaz).
   - XML'ler ZIP'in kökünde, alt klasörlerde ya da ZIP içindeki ZIP'lerde olabilir; hepsi bulunur.
   - Fatura olmayan XML'ler (uygulama yanıtı vb.) atlanır.
-  - Başarılı ZIP  -> Islenen klasörüne taşınır (başına tarih-saat eklenir)
+  - Başarılı ZIP  -> Islenen klasörüne taşınır (başına tarih-saat eklenir),
+                     30 gün sonra otomatik silinir (veriler SQL'de kalır)
     Hatalı ZIP    -> Hatali klasörüne taşınır, yanında .hata.txt dosyasında sebebi yazar
     Tüm işlemler  -> Log\aktarim_YYYY-AA.log
   - Kopyalanması bitmemiş ZIP'e dokunmaz (son 20 saniyede değişmişse bir sonraki tura bırakır).
@@ -20,7 +21,7 @@ Klasördeki dosyalar
   ayarlar.ornek.json    Ayar şablonu
   Calistir.bat          Elle hemen çalıştırmak için (çift tıklayın)
   Zamanlayici_Kur.ps1   Otomatik çalışma (Görev Zamanlayıcı) kurulumu
-  Gelen, Islenen, Hatali, Log, Gecici   İlk çalışmada kendiliğinden oluşur
+  Gelen, Islenen, Hatali, Log, Gecici   Çalışma klasörleri (pakette boş gelir)
 
 KURULUM (SQL Server'a erişen bilgisayarda)
 -----------------------------------------
@@ -33,7 +34,9 @@ KURULUM (SQL Server'a erişen bilgisayarda)
      "Tablo":         Tablo adı (örn. dbo.Faturalar)
      "WindowsKimlik": true  -> Windows oturumunuzla bağlanır (önerilen)
                       false -> "Kullanici" ve "Sifre" ile SQL kullanıcısıyla bağlanır
-     "AnaKlasor":     Boş bırakırsanız Gelen/Islenen/... bu klasörün içinde oluşur.
+     "IslenenSaklamaGun": İşlenen ZIP'ler kaç gün sonra silinsin (varsayılan 30, 0 = hiç silme)
+     "HataliSaklamaGun":  Hatalı ZIP'ler kaç gün sonra silinsin (varsayılan 0 = hiç silme)
+     "AnaKlasor":     Boş bırakırsanız Gelen/Islenen/... bu klasörün içindekiler kullanılır.
                       Başka yer isterseniz yazın, örn. "D:\\Faturalar"  (ters bölü iki kez yazılır)
    Not: SQL şifresi bu dosyada açık durur. Mümkünse Windows kimliği, ya da sadece bu tabloya
    yazma yetkisi olan ayrı bir SQL kullanıcısı kullanın.
@@ -59,6 +62,12 @@ Tablo hakkında
   - UUID kolonu şarttır (çift kayıt kontrolü bunu kullanır).
   - Bir metin kolonu kısa kalırsa ZIP Hatali'ya gider ve hangi kolon olduğu yazılır; kolonu büyütüp
     ZIP'i Hatali'dan tekrar Gelen'e atmanız yeterli.
+
+Saklama süreleri
+  - Islenen'deki ZIP'ler, adlarındaki işlenme zamanından itibaren IslenenSaklamaGun (30) gün sonra silinir.
+  - Hatali'daki ZIP'ler varsayılan olarak silinmez (incelemeniz için). İsterseniz HataliSaklamaGun verin.
+  - Sadece programın taşıdığı dosyalar (adı yyyyMMdd_HHmmss_ ile başlayan) silinir; elle koyduklarınıza dokunulmaz.
+  - -Deneme modunda hiçbir şey silinmez, silinecekler log'a yazılır.
 
 Sorun olursa
   Log klasöründeki son log dosyasına ve Hatali klasöründeki .hata.txt dosyasına bakın.

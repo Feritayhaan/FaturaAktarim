@@ -7,6 +7,8 @@
   - Tabloda ayni UUID'li fatura varsa tekrar eklenmez (ayni ZIP iki kez atilsa da cift kayit olmaz).
   - Her ZIP tek islemdir (transaction): ya tamami yazilir ya hic yazilmaz.
   - Basarili ZIP -> Islenen, hatali ZIP -> Hatali klasorune tasinir. Ayrinti -> Log klasoru.
+  - Islenen klasorundeki ZIP'ler IslenenSaklamaGun (varsayilan 30) gun sonra otomatik silinir.
+    Hatali klasoru HataliSaklamaGun ile (varsayilan 0 = hic silinmez).
 
   Kullanim:
     powershell -ExecutionPolicy Bypass -File FaturaAktarim.ps1            (normal calisma)
@@ -52,6 +54,14 @@ foreach ($k in 'Gelen', 'Islenen', 'Hatali', 'Log', 'Gecici') {
 }
 $tablo = [string]$ayar.Tablo
 if ($tablo -notmatch '^[\w\.\[\] ]+$') { throw "Tablo adi gecersiz: $tablo" }
+
+# Saklama sureleri (gun). 0 = hic silme. Ayar dosyasinda yoksa varsayilan kullanilir.
+function Get-Ayar([string]$Ad, $Varsayilan) {
+    if (($ayar.PSObject.Properties.Name -contains $Ad) -and ("$($ayar.$Ad)" -ne '')) { return $ayar.$Ad }
+    return $Varsayilan
+}
+$islenenGun = [int](Get-Ayar 'IslenenSaklamaGun' 30)   # basariyla aktarilan ZIP'ler 30 gun sonra silinir
+$hataliGun  = [int](Get-Ayar 'HataliSaklamaGun' 0)     # hatali ZIP'ler incelenmeli; varsayilan: silinmez
 
 function Write-Log([string]$Mesaj, [string]$Seviye = 'BILGI') {
     $satir = '{0} [{1}] {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Seviye, $Mesaj
@@ -377,6 +387,33 @@ function Invoke-Zip($Zip, $Conn, $Schema) {
     }
 }
 
+# ---------------------------------------------------------------- saklama suresi temizligi
+# Sadece programin kendi tasidigi dosyalari siler: adi "yyyyMMdd_HHmmss_" ile baslayanlar.
+# Yas, bu onekteki islenme zamanina gore hesaplanir (dosyanin kopyalanma tarihine gore degil).
+function Remove-OldOutputs([string]$Klasor, [int]$Gun, [string]$Ad) {
+    if ($Gun -le 0) { return }
+    $sinir = (Get-Date).AddDays(-$Gun)
+    $silinen = 0
+    foreach ($f in @(Get-ChildItem -LiteralPath $Klasor -File)) {
+        if (-not ($f.Name -match '^(\d{8}_\d{6})_')) { continue }
+        $zaman = [datetime]::MinValue
+        if (-not [datetime]::TryParseExact($Matches[1], 'yyyyMMdd_HHmmss', $INV, [Globalization.DateTimeStyles]::None, [ref]$zaman)) { continue }
+        if ($zaman -ge $sinir) { continue }
+        if ($Deneme) { Write-Log "[DENEME] ${Ad}: $($f.Name) silinecekti ($Gun gunden eski)"; continue }
+        try { Remove-Item -LiteralPath $f.FullName -Force; $silinen++ }
+        catch { Write-Log "${Ad} temizligi: $($f.Name) silinemedi - $($_.Exception.Message)" 'UYARI' }
+    }
+    if ($silinen) { Write-Log "${Ad} temizligi: $silinen dosya silindi ($Gun gunden eski)" }
+}
+
+# Yarida kalmis calismalardan kalan gecici klasorler (1 gunden eski)
+function Clear-TempLeftovers {
+    if ($Deneme) { return }
+    foreach ($d in @(Get-ChildItem -LiteralPath $dir.Gecici -Directory)) {
+        if ($d.LastWriteTime -lt (Get-Date).AddDays(-1)) { Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 # ---------------------------------------------------------------- ana akis
 $kilitYolu = Join-Path $dir.Gecici '.calisiyor.kilit'
 try { $kilit = [IO.File]::Open($kilitYolu, 'OpenOrCreate', 'ReadWrite', 'None') }
@@ -384,7 +421,13 @@ catch { Write-Host 'Baska bir aktarim zaten calisiyor, cikiliyor.'; exit 0 }
 
 $hataVar = $false
 try {
-    $zipler = @(Get-ChildItem -LiteralPath $dir.Gelen -File | Where-Object { $_.Extension -eq '.zip' } | Sort-Object LastWriteTime)
+    try {
+        Remove-OldOutputs $dir.Islenen $islenenGun 'Islenen'
+        Remove-OldOutputs $dir.Hatali  $hataliGun  'Hatali'
+        Clear-TempLeftovers
+    } catch { Write-Log "Temizlik sirasinda hata (aktarim devam ediyor): $($_.Exception.Message)" 'UYARI' }
+
+    $zipler =@(Get-ChildItem -LiteralPath $dir.Gelen -File | Where-Object { $_.Extension -eq '.zip' } | Sort-Object LastWriteTime)
     $hazir = @($zipler | Where-Object { Test-FileReady $_ })
     if ($zipler.Count -gt $hazir.Count) { Write-Host "$($zipler.Count - $hazir.Count) ZIP henuz kopyalaniyor, sonraki turda alinacak." }
     if (-not $hazir.Count) { Write-Host 'Islenecek ZIP yok.'; return }
