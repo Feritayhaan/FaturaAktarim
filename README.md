@@ -77,9 +77,16 @@ GROUP BY FaturaNo;
 - **Saat:** `08:05:51.0000000+03:00` gibi değerler `08:05:51`'e indirilir.
 - **Sayılar** bilgisayarın Türkçe ayarlarından bağımsız (nokta ondalık) okunur.
 
+## İndirme
+
+Hazır paket **[Releases](../../releases/latest)** sayfasında: `FaturaAktarim-vX.Y.Z.zip` dosyasını indirip açın.
+Paketin içinde ayar dosyası (`ayarlar.json`) yoktur; şablondan oluşturulur (aşağıya bakın).
+
+> İndirdiğiniz ZIP'i açmadan önce sağ tık → **Özellikler** → altta **Engellemeyi kaldır** işaretleyin. Windows internetten inen dosyaları işaretler; bu adım olası güvenlik uyarılarını önler.
+
 ## Kurulum
 
-1. Klasörü kalıcı bir yere kopyalayın (örn. `C:\FaturaAktarim`).
+1. Paketi (veya klasörü) kalıcı bir yere açın (örn. `C:\FaturaAktarim`).
 2. `ayarlar.ornek.json` dosyasını **`ayarlar.json`** adıyla kopyalayıp doldurun:
 
    | Alan | Açıklama |
@@ -106,6 +113,12 @@ GROUP BY FaturaNo;
 - `ayarlar.json` ve `Gelen` / `Islenen` / `Hatali` / `Log` klasörleri **`.gitignore`'da**: sunucu bilgileri ve fatura verileri (kişi adları, TCKN'ler) repoya girmez.
 - SQL kullanıcısı kullanacaksanız sadece bu tabloya yazma yetkisi olan ayrı bir kullanıcı açın; şifre `ayarlar.json`'da açık durur.
 - XML'ler dış kaynak çözümlemesi kapalı (`XmlResolver = null`) okunur.
+
+## Sürümler
+
+| Sürüm | Değişiklik |
+|---|---|
+| [v1.0.0](../../releases/tag/v1.0.0) | İlk sürüm: ZIP → SQL aktarımı, UUID ile tekrar kontrolü, tek işlem (transaction), deneme modu, Görev Zamanlayıcı kurulumu |
 
 ## Gereksinimler
 
