@@ -6,6 +6,74 @@ ZIP'i `Gelen` klasörüne atarsınız, program gerisini halleder. Ek kurulum ger
 
 ---
 
+## Basit anlatım
+
+> **Kısaca:** Fatura ZIP'ini `C:\FaturaAktarim\Gelen` klasörüne atarsın, faturalar birkaç dakika içinde kendiliğinden SQL'deki tabloya yazılır.
+
+### Kurulum (bir kere yapılır, ~5 dakika)
+
+1. **İndir** – [Releases](../../releases/latest) sayfasından `FaturaAktarim-vX.Y.Z.zip` dosyasını indir.
+2. **Engeli kaldır** – İnen ZIP'e sağ tık → **Özellikler** → en alttaki **Engellemeyi kaldır** kutusunu işaretle → **Tamam**.
+3. **Klasörü koy** – ZIP'i aç. İçinden çıkan **`FaturaAktarim`** klasörünü **`C:\`** sürücüsüne kopyala.
+   Sonuç şöyle olmalı: **`C:\FaturaAktarim`**
+   *(Masaüstüne ya da OneDrive'a koyma: faturalar buluta gider ve eşitleme dosyaları kilitleyebilir.)*
+4. **Ayar dosyasını oluştur** – `C:\FaturaAktarim` içindeki `ayarlar.ornek.json` dosyasını kopyala, aynı yere yapıştır ve kopyanın adını **`ayarlar.json`** yap.
+5. **Sunucu bilgisini yaz** – `ayarlar.json`'a sağ tık → **Birlikte aç** → **Not Defteri**. Sadece bu iki satırı değiştir, kaydet:
+   ```json
+   "Sunucu": "SQL sunucusunun adı veya IP'si",
+   "Veritabani": "Veritabanının adı",
+   ```
+6. **Dene** – Bir fatura ZIP'ini `C:\FaturaAktarim\Gelen` klasörüne kopyala, **20 saniye bekle**, sonra `C:\FaturaAktarim\Calistir.bat`'a çift tıkla.
+   Açılan pencerede `TAMAM ... yeni fatura: ...` yazıyorsa her şey çalışıyor.
+7. **Otomatiğe al** – Başlat menüsüne **PowerShell** yaz, aç ve şu iki satırı yapıştır:
+   ```powershell
+   cd C:\FaturaAktarim
+   powershell -ExecutionPolicy Bypass -File .\Zamanlayici_Kur.ps1
+   ```
+   Artık program **5 dakikada bir** `Gelen` klasörüne kendisi bakar.
+
+### Her ay yapacağın tek şey
+
+📥 Yeni fatura ZIP'ini **`C:\FaturaAktarim\Gelen`** klasörüne at. Bu kadar.
+
+Aynı ZIP'i yanlışlıkla iki kez atsan da sorun olmaz; tabloda olan faturalar tekrar eklenmez.
+
+### Neye, nereden bakarım?
+
+| Merak ettiğin | Bakacağın yer |
+|---|---|
+| Faturalar aktarıldı mı? | `C:\FaturaAktarim\Log\aktarim_2026-11.md` → ✅ ile başlayan satır |
+| İşi biten ZIP'ler nerede? | `C:\FaturaAktarim\Islenen` (30 gün sonra kendiliğinden silinir) |
+| Aktarılamayan ZIP var mı? | `C:\FaturaAktarim\Hatali` → yanındaki `.hata.txt` sebebini yazar |
+
+### Bir şey ters giderse
+
+- **ZIP `Hatali` klasörüne düştüyse:** yanındaki `.hata.txt`'yi oku, sorunu düzelt, ZIP'i `Hatali`'dan tekrar `Gelen`'e taşı.
+- **Hiçbir şey olmuyorsa:** `Calistir.bat`'a çift tıkla ve pencerede yazan mesajı oku.
+- **"Ayar dosyası bulunamadı" diyorsa:** 4. adımı yapmamışsın; `ayarlar.json` dosyası yok.
+- **"SQL bağlantısı / tablo hatası" diyorsa:** `ayarlar.json`'daki sunucu / veritabanı adı yanlış ya da bu Windows kullanıcısının SQL'e yetkisi yok.
+
+### Log nasıl görünür?
+
+Log her ay için ayrı bir Markdown dosyasıdır (`Log\aktarim_YYYY-AA.md`). GitHub, VS Code veya herhangi bir Markdown görüntüleyicide düzgün görünür, Not Defteri'nde de okunur:
+
+```markdown
+# FaturaAktarim Logu - Kasım 2026
+
+> ✅ aktarıldı   ℹ️ bilgi   ⚠️ uyarı   ❌ hata
+
+## 27 Kasım 2026, Cuma
+
+- `09:48:29` ℹ️ Islenen temizliği: 1 dosya silindi (30 günden eski)
+- `09:48:29` ❌ **HATA** **bozuk.zip**: ZIP açılamadı (bozuk ya da eksik kopyalanmış olabilir): ...
+- `09:48:36` ✅ **efatura_ekim.zip** → XML: 264, yeni fatura: 264 (1480 kalem), zaten tabloda: 0, fatura olmayan XML: 0
+- `09:48:41` ✅ **earsiv_ekim.zip** → XML: 202, yeni fatura: 202 (1306 kalem), zaten tabloda: 0, fatura olmayan XML: 0
+```
+
+---
+
+*Aşağısı teknik ayrıntılardır.*
+
 ## Nasıl çalışıyor?
 
 ```mermaid
@@ -46,7 +114,7 @@ FaturaAktarim/
 ├── Gelen/                 # ZIP'leri buraya atın
 ├── Islenen/               # Başarıyla aktarılan ZIP'ler  → 30 gün sonra silinir
 ├── Hatali/                # Aktarılamayan ZIP'ler + .hata.txt  → varsayılan: silinmez
-├── Log/                   # aktarim_YYYY-AA.log
+├── Log/                   # aktarim_YYYY-AA.md (Markdown log, ay başına bir dosya)
 └── Gecici/                # Açma sırasında kullanılan geçici klasör (kendini temizler)
 ```
 
@@ -137,6 +205,7 @@ Paketin içinde ayar dosyası (`ayarlar.json`) yoktur; şablondan oluşturulur (
 
 | Sürüm | Değişiklik |
 |---|---|
+| [v1.2.0](../../releases/tag/v1.2.0) | Log Markdown oldu (`Log\aktarim_YYYY-AA.md`: gün başlıkları, ✅ ℹ️ ⚠️ ❌ simgeleri); mesajlar Türkçe karakterli; bozuk ZIP için anlaşılır hata; README'ye adım adım "Basit anlatım" |
 | [v1.1.0](../../releases/tag/v1.1.0) | Çalışma klasörleri pakette hazır gelir. İşlenen ZIP'ler 30 gün sonra otomatik silinir (`IslenenSaklamaGun`); hatalı ZIP'ler için isteğe bağlı süre (`HataliSaklamaGun`); yarım kalan geçici klasörlerin temizliği |
 | [v1.0.0](../../releases/tag/v1.0.0) | İlk sürüm: ZIP → SQL aktarımı, UUID ile tekrar kontrolü, tek işlem (transaction), deneme modu, Görev Zamanlayıcı kurulumu |
 

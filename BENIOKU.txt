@@ -12,7 +12,7 @@ Ne yapar?
   - Başarılı ZIP  -> Islenen klasörüne taşınır (başına tarih-saat eklenir),
                      30 gün sonra otomatik silinir (veriler SQL'de kalır)
     Hatalı ZIP    -> Hatali klasörüne taşınır, yanında .hata.txt dosyasında sebebi yazar
-    Tüm işlemler  -> Log\aktarim_YYYY-AA.log
+    Tüm işlemler  -> Log\aktarim_YYYY-AA.md (Markdown; Not Defteri veya VS Code ile açılır)
   - Kopyalanması bitmemiş ZIP'e dokunmaz (son 20 saniyede değişmişse bir sonraki tura bırakır).
 
 Klasördeki dosyalar
@@ -70,4 +70,4 @@ Saklama süreleri
   - -Deneme modunda hiçbir şey silinmez, silinecekler log'a yazılır.
 
 Sorun olursa
-  Log klasöründeki son log dosyasına ve Hatali klasöründeki .hata.txt dosyasına bakın.
+  Log klasöründeki son aktarim_YYYY-AA.md dosyasına ve Hatali klasöründeki .hata.txt dosyasına bakın.

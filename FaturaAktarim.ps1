@@ -43,7 +43,7 @@ $KOLONLAR = @(
 
 # ---------------------------------------------------------------- ayarlar ve klasorler
 if (-not (Test-Path -LiteralPath $AyarDosyasi)) {
-    throw "Ayar dosyasi bulunamadi: $AyarDosyasi - ayarlar.ornek.json dosyasini ayarlar.json adiyla kopyalayip sunucu/veritabani bilgilerini doldurun."
+    throw "Ayar dosyası bulunamadı: $AyarDosyasi - ayarlar.ornek.json dosyasını ayarlar.json adıyla kopyalayıp sunucu/veritabanı bilgilerini doldurun."
 }
 $ayar = Get-Content -LiteralPath $AyarDosyasi -Raw -Encoding UTF8 | ConvertFrom-Json
 $ana = if ($ayar.AnaKlasor) { $ayar.AnaKlasor } else { $PSScriptRoot }
@@ -53,7 +53,7 @@ foreach ($k in 'Gelen', 'Islenen', 'Hatali', 'Log', 'Gecici') {
     New-Item -ItemType Directory -Force -Path $dir[$k] | Out-Null
 }
 $tablo = [string]$ayar.Tablo
-if ($tablo -notmatch '^[\w\.\[\] ]+$') { throw "Tablo adi gecersiz: $tablo" }
+if ($tablo -notmatch '^[\w\.\[\] ]+$') { throw "Tablo adı geçersiz: $tablo" }
 
 # Saklama sureleri (gun). 0 = hic silme. Ayar dosyasinda yoksa varsayilan kullanilir.
 function Get-Ayar([string]$Ad, $Varsayilan) {
@@ -63,11 +63,62 @@ function Get-Ayar([string]$Ad, $Varsayilan) {
 $islenenGun = [int](Get-Ayar 'IslenenSaklamaGun' 30)   # basariyla aktarilan ZIP'ler 30 gun sonra silinir
 $hataliGun  = [int](Get-Ayar 'HataliSaklamaGun' 0)     # hatali ZIP'ler incelenmeli; varsayilan: silinmez
 
+# ---------------------------------------------------------------- log (Markdown)
+# Log\aktarim_YYYY-AA.md : ay basina bir dosya, gun basina "## " basligi, her olay bir madde:
+#   - `09:42:08` (simge) **earsiv.zip** -> XML: 202, yeni fatura: 202 ...
+# Simgeler kod noktasi olarak yazili. Bu dosya UTF-8 (BOM'lu) kaydedilmeli; yoksa PowerShell 5.1 Turkce harfleri bozar.
+$TR = [Globalization.CultureInfo]::GetCultureInfo('tr-TR')
+$IKON = @{
+    TAMAM = [char]::ConvertFromUtf32(0x2705)                       # yesil tik
+    BILGI = [char]::ConvertFromUtf32(0x2139) + [char]0xFE0F        # bilgi
+    UYARI = [char]::ConvertFromUtf32(0x26A0) + [char]0xFE0F        # uyari ucgeni
+    HATA  = [char]::ConvertFromUtf32(0x274C)                       # kirmizi carpi
+}
+$OK = [char]::ConvertFromUtf32(0x2192)                             # sag ok
+$UTF8 = New-Object System.Text.UTF8Encoding($false)
+$script:logGunu = $null
+
 function Write-Log([string]$Mesaj, [string]$Seviye = 'BILGI') {
-    $satir = '{0} [{1}] {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Seviye, $Mesaj
-    $dosya = Join-Path $dir.Log ('aktarim_{0}.log' -f (Get-Date -Format 'yyyy-MM'))
-    Add-Content -LiteralPath $dosya -Value $satir -Encoding UTF8
-    Write-Host $satir
+    $simdi = Get-Date
+    Write-Host ('{0} [{1}] {2}' -f $simdi.ToString('yyyy-MM-dd HH:mm:ss'), $Seviye, $Mesaj)
+
+    $dosya = Join-Path $dir.Log ('aktarim_{0}.md' -f $simdi.ToString('yyyy-MM'))
+    $md = New-Object System.Text.StringBuilder
+    if (-not (Test-Path -LiteralPath $dosya)) {
+        [void]$md.AppendLine('# FaturaAktarim Logu - ' + $TR.TextInfo.ToTitleCase($simdi.ToString('MMMM yyyy', $TR)))
+        [void]$md.AppendLine()
+        [void]$md.AppendLine(('> {0} aktarıldı &nbsp; {1} bilgi &nbsp; {2} uyarı &nbsp; {3} hata' -f $IKON.TAMAM, $IKON.BILGI, $IKON.UYARI, $IKON.HATA))
+    }
+    $baslik = '## ' + $simdi.ToString('d MMMM yyyy, dddd', $TR)
+    if ($script:logGunu -ne $baslik) {
+        $varMi = (Test-Path -LiteralPath $dosya) -and (Select-String -LiteralPath $dosya -SimpleMatch -Pattern $baslik -Quiet)
+        if (-not $varMi) { [void]$md.AppendLine(); [void]$md.AppendLine($baslik); [void]$md.AppendLine() }
+        $script:logGunu = $baslik
+    }
+
+    $metin = ($Mesaj -replace '\s*\r?\n\s*', ' ').Trim()
+    $tur = $Seviye
+    if ($Seviye -eq 'BILGI' -and $metin.StartsWith('TAMAM ')) {
+        # "TAMAM dosya.zip -> ozet"  ==>  "**dosya.zip** -> ozet"
+        $tur = 'TAMAM'; $metin = $metin.Substring(6)
+        $i = $metin.IndexOf(' -> ')
+        if ($i -gt 0) { $metin = '**' + $metin.Substring(0, $i) + '** ' + $OK + ' ' + $metin.Substring($i + 4) }
+    } elseif ($metin.StartsWith('[DENEME] ')) {
+        # "[DENEME] dosya.zip -> ozet"  ==>  "*Deneme:* **dosya.zip** -> ozet"
+        $metin = $metin.Substring(9)
+        $i = $metin.IndexOf(' -> ')
+        if ($i -gt 0) { $metin = '**' + $metin.Substring(0, $i) + '** ' + $OK + ' ' + $metin.Substring($i + 4) }
+        $metin = '*Deneme:* ' + $metin
+    } elseif ($Seviye -eq 'HATA' -and $metin.StartsWith('HATA ')) {
+        # "HATA dosya.zip: sebep"  ==>  "**HATA** **dosya.zip**: sebep"
+        $metin = $metin.Substring(5)
+        $i = $metin.IndexOf(': ')
+        if ($i -gt 0) { $metin = '**' + $metin.Substring(0, $i) + '**' + $metin.Substring($i) }
+    }
+    if (-not $IKON.ContainsKey($tur)) { $tur = 'BILGI' }
+    $etiket = if ($Seviye -eq 'HATA' -or $Seviye -eq 'UYARI') { " **$Seviye**" } else { '' }
+    [void]$md.AppendLine(('- `{0}` {1}{2} {3}' -f $simdi.ToString('HH:mm:ss'), $IKON[$tur], $etiket, $metin))
+    [IO.File]::AppendAllText($dosya, $md.ToString(), $UTF8)
 }
 
 # ---------------------------------------------------------------- XML okuma yardimcilari
@@ -284,7 +335,7 @@ function Convert-ForColumn($Deger, [string]$Tur, $Kolon, [string]$KolonAdi) {
     if ($t -eq [string]) {
         $s = if ($Deger -is [decimal]) { $Deger.ToString($INV) } else { [string]$Deger }
         if ($Kolon.Size -gt 0 -and $Kolon.Size -lt 1000000 -and $s.Length -gt $Kolon.Size) {
-            throw "Kolon '$KolonAdi' kisa kaliyor: deger $($s.Length) karakter, tabloda $($Kolon.Size). Kolonu buyutun (or. NVARCHAR(MAX))."
+            throw "Kolon '$KolonAdi' kısa kalıyor: değer $($s.Length) karakter, tabloda $($Kolon.Size). Kolonu büyütün (ör. NVARCHAR(MAX))."
         }
         return $s
     }
@@ -332,9 +383,13 @@ function Expand-ZipDeep([string]$Zip, [string]$Hedef) {
 function Invoke-Zip($Zip, $Conn, $Schema) {
     $calisma = Join-Path $dir.Gecici ('{0}_{1}' -f [IO.Path]::GetFileNameWithoutExtension($Zip.Name), [guid]::NewGuid().ToString('N').Substring(0, 8))
     try {
-        Expand-ZipDeep $Zip.FullName $calisma
+        try { Expand-ZipDeep $Zip.FullName $calisma }
+        catch {
+            $ic = $_.Exception; while ($ic.InnerException) { $ic = $ic.InnerException }
+            throw "ZIP açılamadı (bozuk ya da eksik kopyalanmış olabilir): $($ic.Message)"
+        }
         $xmls = @(Get-ChildItem -LiteralPath $calisma -Recurse -File | Where-Object { $_.Extension -eq '.xml' } | Sort-Object FullName)
-        if (-not $xmls.Count) { throw 'ZIP icinde XML dosyasi yok.' }
+        if (-not $xmls.Count) { throw 'ZIP içinde XML dosyası yok.' }
 
         $mevcut = Get-ExistingUuids $Conn
         $yeniSatir = New-Object System.Collections.Generic.List[object]
@@ -342,18 +397,18 @@ function Invoke-Zip($Zip, $Conn, $Schema) {
         foreach ($x in $xmls) {
             $klasor = if ($x.DirectoryName.TrimEnd('\') -eq $calisma.TrimEnd('\')) { [IO.Path]::GetFileNameWithoutExtension($Zip.Name) } else { $x.Directory.Name }
             try { $satirlar = Read-Invoice $x.FullName $klasor }
-            catch { throw "XML okunamadi: $($x.FullName.Substring($calisma.Length + 1)) - $($_.Exception.Message)" }
+            catch { throw "XML okunamadı: $($x.FullName.Substring($calisma.Length + 1)) - $($_.Exception.Message)" }
             if ($null -eq $satirlar) { $faturaDegil++; continue }
-            if ($satirlar.Count -eq 0) { Write-Log "Kalemsiz fatura atlandi: $($x.Name)" 'UYARI'; continue }
+            if ($satirlar.Count -eq 0) { Write-Log "Kalemsiz fatura atlandı: $($x.Name)" 'UYARI'; continue }
             $uuid = $satirlar[0].UUID
-            if (-not $uuid) { throw "UUID'siz fatura: $($x.Name)" }
+            if (-not $uuid) { throw "UUID'si olmayan fatura: $($x.Name)" }
             if ($mevcut.Contains($uuid)) { $faturaVar++; continue }
             [void]$mevcut.Add($uuid)            # ayni ZIP icinde iki kez gelirse de bir kez ekle
             $faturaYeni++
             foreach ($s in $satirlar) { $yeniSatir.Add($s) }
         }
         $ozet = "XML: $($xmls.Count), yeni fatura: $faturaYeni ($($yeniSatir.Count) kalem), zaten tabloda: $faturaVar, fatura olmayan XML: $faturaDegil"
-        if ($Deneme) { Write-Log "[DENEME] $($Zip.Name) -> $ozet (SQL'e yazilmadi)"; return }
+        if ($Deneme) { Write-Log "[DENEME] $($Zip.Name) -> $ozet (SQL'e yazılmadı)"; return }
 
         if ($yeniSatir.Count -gt 0) {
             # Hedef tabloda olan kolonlarla DataTable kur
@@ -399,11 +454,11 @@ function Remove-OldOutputs([string]$Klasor, [int]$Gun, [string]$Ad) {
         $zaman = [datetime]::MinValue
         if (-not [datetime]::TryParseExact($Matches[1], 'yyyyMMdd_HHmmss', $INV, [Globalization.DateTimeStyles]::None, [ref]$zaman)) { continue }
         if ($zaman -ge $sinir) { continue }
-        if ($Deneme) { Write-Log "[DENEME] ${Ad}: $($f.Name) silinecekti ($Gun gunden eski)"; continue }
+        if ($Deneme) { Write-Log "[DENEME] ${Ad}: $($f.Name) silinecekti ($Gun günden eski)"; continue }
         try { Remove-Item -LiteralPath $f.FullName -Force; $silinen++ }
-        catch { Write-Log "${Ad} temizligi: $($f.Name) silinemedi - $($_.Exception.Message)" 'UYARI' }
+        catch { Write-Log "${Ad} temizliği: $($f.Name) silinemedi - $($_.Exception.Message)" 'UYARI' }
     }
-    if ($silinen) { Write-Log "${Ad} temizligi: $silinen dosya silindi ($Gun gunden eski)" }
+    if ($silinen) { Write-Log "${Ad} temizliği: $silinen dosya silindi ($Gun günden eski)" }
 }
 
 # Yarida kalmis calismalardan kalan gecici klasorler (1 gunden eski)
@@ -417,7 +472,7 @@ function Clear-TempLeftovers {
 # ---------------------------------------------------------------- ana akis
 $kilitYolu = Join-Path $dir.Gecici '.calisiyor.kilit'
 try { $kilit = [IO.File]::Open($kilitYolu, 'OpenOrCreate', 'ReadWrite', 'None') }
-catch { Write-Host 'Baska bir aktarim zaten calisiyor, cikiliyor.'; exit 0 }
+catch { Write-Host 'Başka bir aktarım zaten çalışıyor, çıkılıyor.'; exit 0 }
 
 $hataVar = $false
 try {
@@ -425,22 +480,22 @@ try {
         Remove-OldOutputs $dir.Islenen $islenenGun 'Islenen'
         Remove-OldOutputs $dir.Hatali  $hataliGun  'Hatali'
         Clear-TempLeftovers
-    } catch { Write-Log "Temizlik sirasinda hata (aktarim devam ediyor): $($_.Exception.Message)" 'UYARI' }
+    } catch { Write-Log "Temizlik sırasında hata (aktarım devam ediyor): $($_.Exception.Message)" 'UYARI' }
 
     $zipler =@(Get-ChildItem -LiteralPath $dir.Gelen -File | Where-Object { $_.Extension -eq '.zip' } | Sort-Object LastWriteTime)
     $hazir = @($zipler | Where-Object { Test-FileReady $_ })
-    if ($zipler.Count -gt $hazir.Count) { Write-Host "$($zipler.Count - $hazir.Count) ZIP henuz kopyalaniyor, sonraki turda alinacak." }
-    if (-not $hazir.Count) { Write-Host 'Islenecek ZIP yok.'; return }
+    if ($zipler.Count -gt $hazir.Count) { Write-Host "$($zipler.Count - $hazir.Count) ZIP henüz kopyalanıyor, sonraki turda alınacak." }
+    if (-not $hazir.Count) { Write-Host 'İşlenecek ZIP yok.'; return }
 
     $conn = $null; $schema = $null
     try {
         $conn = New-SqlConnection
         $schema = Get-TargetSchema $conn
-        if (-not $schema.ContainsKey('UUID')) { throw "Tabloda UUID kolonu yok; cift kayit kontrolu icin gerekli." }
+        if (-not $schema.ContainsKey('UUID')) { throw "Tabloda UUID kolonu yok; çift kayıt kontrolü için gerekli." }
         $eksik = @($KOLONLAR | Where-Object { -not $schema.ContainsKey($_.Ad) } | ForEach-Object { $_.Ad })
-        if ($eksik.Count) { Write-Log ("Tabloda olmayan kolonlar yazilmayacak: " + ($eksik -join ', ')) 'UYARI' }
+        if ($eksik.Count) { Write-Log ("Tabloda olmayan kolonlar yazılmayacak: " + ($eksik -join ', ')) 'UYARI' }
     } catch {
-        Write-Log "SQL baglantisi / tablo hatasi: $($_.Exception.Message)" 'HATA'
+        Write-Log "SQL bağlantısı / tablo hatası: $($_.Exception.Message)" 'HATA'
         exit 2
     }
 
